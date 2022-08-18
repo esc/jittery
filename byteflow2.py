@@ -64,6 +64,9 @@ class BasicBlock:
     backedges: Set[Label]
     """Backedges offsets"""
 
+    name: str
+    """Optional label for the current block"""
+
     def is_exiting(self) -> bool:
         return not self.jump_targets
 
@@ -239,6 +242,33 @@ class BlockMap:
 
     def __getitem__(self, index):
         return self.graph[index]
+    
+    def add_block_between(self,
+                          nodes_above: Set[Label] = set(),
+                          nodes_below: Set[Label] = set(),
+                          backedges_to_node: Set[Label] = set(),
+                          fallthrough: bool = True,
+                          name: str = None):
+        _label = ControlLabel(str(self.clg.new_index()))
+        _block = BasicBlock(
+            begin=_label,
+            end=ControlLabel("end"),
+            fallthrough=fallthrough,
+            jump_targets=nodes_below,
+            backedges=backedges_to_node,
+            name=name
+            )
+        self.add_node(_block)
+
+        # re-wire all previous exit nodes to the synthetic one
+        for _node in nodes_above:
+            block = self.graph.pop(_node)
+            jump_targets = set((_label,))
+            replaced_block = block.replace_jump_targets(
+                        jump_targets=jump_targets)
+            self.add_node(replaced_block)
+
+        return _block
 
     def exclude_nodes(self, exclude_nodes: Set[Label]):
         """Iterator over all nodes not in exclude_nodes. """
@@ -328,20 +358,7 @@ class BlockMap:
                         if self.graph[node].is_exiting()]
         # if there is more than one, we may need to close it
         if len(return_nodes) > 1:
-            # create label and block and add to graph
-            return_solo_label = ControlLabel(str(self.clg.new_index()))
-            return_solo_block = BasicBlock(
-                begin=return_solo_label,
-                end=ControlLabel("end"),
-                fallthrough=False,
-                jump_targets=set(),
-                backedges=set()
-                )
-            self.add_node(return_solo_block)
-            # re-wire all previous exit nodes to the synthetic one
-            for rnode in return_nodes:
-                self.add_node(self.graph.pop(rnode).replace_jump_targets(
-                            jump_targets=set((return_solo_label,))))
+            self.add_block_between(return_nodes, name = "Joint Return")
 
     def is_reachable_dfs(self, begin, end):
         """Is end reachable from begin. """
@@ -370,22 +387,8 @@ class BlockMap:
             return solo_tail_label, solo_exit_label
 
         if len(tails) == 1 and len(exits) == 2:
-            # join only exits
-            solo_tail_label = next(iter(tails))
-            solo_exit_label = ControlLabel(str(self.clg.new_index()))
-            # The solo exit block points to the exits
-            solo_exit_block = BasicBlock(begin=solo_exit_label,
-                                         end=ControlLabel("end"),
-                                         fallthrough=False,
-                                         jump_targets=set(exits),
-                                         backedges=set()
-                                         )
-            self.add_node(solo_exit_block)
-            # Update the solo tail block to point to the solo exit block
-            self.add_node(self.graph.pop(solo_tail_label).replace_jump_targets(
-                          jump_targets=set((solo_exit_label,))))
-
-            return solo_tail_label, solo_exit_label
+            new_block = self.add_block_between(tails, set(exits), name="Single tail, Double exit join")
+            return next(iter(tails)), new_block.begin
 
         if len(tails) >= 2 and len(exits) == 1:
             # join only tails
@@ -396,7 +399,8 @@ class BlockMap:
                                          end=ControlLabel("end"),
                                          fallthrough=True,
                                          jump_targets=set((solo_exit_label,)),
-                                         backedges=set()
+                                         backedges=set(),
+                                         name=None
                                          )
             self.add_node(solo_tail_block)
             # replace the exit label in all tails blocks with the solo tail label
@@ -418,14 +422,16 @@ class BlockMap:
                                          end=ControlLabel("end"),
                                          fallthrough=True,
                                          jump_targets=set((solo_exit_label,)),
-                                         backedges=set()
+                                         backedges=set(),
+                                         name=None
                                          )
             # The solo exit block points to the exits
             solo_exit_block = BasicBlock(begin=solo_exit_label,
                                          end=ControlLabel("end"),
                                          fallthrough=False,
                                          jump_targets=set(exits),
-                                         backedges=set()
+                                         backedges=set(),
+                                         name=None
                                          )
             self.add_node(solo_tail_block)
             self.add_node(solo_exit_block)

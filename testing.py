@@ -1,7 +1,7 @@
 import yaml
 
 from byteflow2 import (ControlLabel, BasicBlock, BlockMap, ByteFlowRenderer,
-                       ByteFlow, join_pre_exits, ControlLabelGenerator,
+                       ByteFlow, ControlLabelGenerator,
                        loop_rotate)
 
 from unittest import TestCase, main
@@ -20,13 +20,27 @@ def from_yaml(yaml_string):
             end_label,
             fallthrough=len(jump_targets["jt"]) == 1,
             backedges=set(),
-            jump_targets=set((ControlLabel(i) for i in jump_targets["jt"]))
+            jump_targets=set((ControlLabel(i) for i in jump_targets["jt"])),
+            name=None
         )
         block_map_graph[begin_label] = block
     return BlockMap(block_map_graph, clg=clg)
 
 
-class TestJoinReturns(TestCase):
+class BlockMapTestCase(TestCase):
+    def assertEqualMaps(self, first_map, second_map):
+        self.assertEqual(first_map.clg.index, second_map.clg.index)
+        
+        for _label in first_map.graph:
+            self.assertEqual(first_map.graph[_label].begin, 
+                             second_map.graph[_label].begin)
+            self.assertEqual(first_map.graph[_label].end, 
+                             second_map.graph[_label].end)
+            self.assertEqual(first_map.graph[_label].jump_targets,
+                             second_map.graph[_label].jump_targets)
+
+
+class TestJoinReturns(BlockMapTestCase):
 
     def test_two_returns(self):
         original = """
@@ -50,10 +64,10 @@ class TestJoinReturns(TestCase):
         """
         expected_block_map = from_yaml(expected)
         original_block_map.join_returns()
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
 
 
-class TestJoinTailsAndExits(TestCase):
+class TestJoinTailsAndExits(BlockMapTestCase):
 
     def test_join_tails_and_exits_case_00(self):
         original = """
@@ -75,7 +89,7 @@ class TestJoinTailsAndExits(TestCase):
         exits = {ControlLabel(i) for i in ("1")}
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
 
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("0"), solo_tail_label)
         self.assertEqual(ControlLabel("1"), solo_exit_label)
 
@@ -109,7 +123,7 @@ class TestJoinTailsAndExits(TestCase):
         exits = {ControlLabel(i) for i in ("1", "2")}
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
 
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("0"), solo_tail_label)
         self.assertEqual(ControlLabel("4"), solo_exit_label)
 
@@ -143,7 +157,7 @@ class TestJoinTailsAndExits(TestCase):
         exits = {ControlLabel(i) for i in ("3")}
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
 
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("4"), solo_tail_label)
         self.assertEqual(ControlLabel("3"), solo_exit_label)
 
@@ -178,7 +192,7 @@ class TestJoinTailsAndExits(TestCase):
         ByteFlowRenderer().render_byteflow(ByteFlow({},
                                                     original_block_map)).view("before")
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("4"), solo_tail_label)
         self.assertEqual(ControlLabel("3"), solo_exit_label)
 
@@ -222,7 +236,7 @@ class TestJoinTailsAndExits(TestCase):
         tails = {ControlLabel(i) for i in ("1", "2")}
         exits = {ControlLabel(i) for i in ("3", "4")}
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("6"), solo_tail_label)
         self.assertEqual(ControlLabel("7"), solo_exit_label)
 
@@ -265,7 +279,7 @@ class TestJoinTailsAndExits(TestCase):
         tails = {ControlLabel(i) for i in ("1", "2")}
         exits = {ControlLabel(i) for i in ("3", "4")}
         solo_tail_label, solo_exit_label = original_block_map.join_tails_and_exits(tails, exits)
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
         self.assertEqual(ControlLabel("6"), solo_tail_label)
         self.assertEqual(ControlLabel("7"), solo_exit_label)
 
@@ -296,7 +310,7 @@ class TestLoopRotate(TestCase):
         print(original_block_map.compute_scc())
         ByteFlowRenderer().render_byteflow(ByteFlow({}, original_block_map)).view("original")
         ByteFlowRenderer().render_byteflow(ByteFlow({}, expected_block_map)).view("expected")
-        self.assertEqual(expected_block_map, original_block_map)
+        self.assertEqualMaps(expected_block_map, original_block_map)
 
 if __name__ == '__main__':
     main()
